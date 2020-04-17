@@ -9,6 +9,12 @@ const path = require("path");
 const dataFolder = path.resolve(__dirname, "..", "data");
 // const outpath = path.resolve(__dirname, "banner.png"); // debug variable
 
+// Constants
+// ~~ Server admin: tweak as needed. ~~
+const COVER_WIDTH_3D = 176;
+const COVER_WIDTH_2D = 160;
+const COVER_WIDTH_DISC = 160;
+
 class Tag extends events.EventEmitter{
     constructor(user, size) {
         super();
@@ -122,17 +128,20 @@ class Tag extends events.EventEmitter{
 
     getCoverWidth(covertype)
     {
-        if (covertype == "cover3D") {
-            return 176;
-        } else if (covertype == "cover") {
-            return 160;
-        } else if (covertype == "disc") {
-            return 160;
-        } else {
-            return 176;
+        switch(covertype) {
+            case "cover3D":
+                return COVER_WIDTH_3D;
+            case "cover":
+                return COVER_WIDTH_2D;
+            case "disc":
+                return COVER_WIDTH_DISC;
+            default:
+                // defaults to the 3d cover. shouldn't ever have to use this, but what the hell
+                return COVER_WIDTH_3D;
         }
     }
 
+    // TODO: Convert to case and use consts
     getCoverHeight(covertype)
     {
         if (covertype == "cover3D") {
@@ -146,6 +155,7 @@ class Tag extends events.EventEmitter{
         }
     }
 
+    // TODO: Convert to case and use consts
     getNoCover(covertype, consoletype)
     {
         if (covertype == "cover3D") {
@@ -159,6 +169,7 @@ class Tag extends events.EventEmitter{
         }
     }
 
+    // lol this is messy. TODO: Cleanup, or rewrite. Or burn with fire. IDC at this point
     async downloadGameCover(game, region, covertype, consoletype, extension) {
         var can = new Canvas.Canvas(this.getCoverWidth(covertype), this.getCoverHeight(covertype));
         var con = can.getContext("2d");
@@ -187,7 +198,6 @@ class Tag extends events.EventEmitter{
                 } catch(e) {
                     console.error(e);
                     return false;
-                    // fs.copyFileSync(path.resolve(dataFolder, "img", this.getNoCover(covertype)), path.resolve(dataFolder, "cache", `${consoletype}-${covertype}-${game}-${region}.png`))
                 }
             }
         }
