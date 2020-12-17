@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "test": "node src/index.js",
-    "start": "node app.js",
+    "start": "sudo /home/ubuntu/.nvm/versions/node/v14.15.1/bin/node app.js",
     "prerender": "node src/rendermiis.js"
   },
   "repository": {

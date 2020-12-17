@@ -85,7 +85,15 @@ app.get('/logout', function(req, res) {
 });
 
 app.get('/callback',
-    passport.authenticate('discord', { failureRedirect: '/' }), function(req, res) { res.cookie("uid", req.user.id); res.redirect("/create") } // auth success
+    passport.authenticate('discord', { failureRedirect: '/' }), function(req, res) {
+        res.cookie("uid", req.user.id);
+        if (config.admins.includes(req.user.id)) {
+            req.user.admin = true;
+        } else {
+            req.user.admin = false;
+        }
+        res.redirect("/create");
+    } // auth success
 );
 
 app.route("/edit")
@@ -147,9 +155,9 @@ app.get("/create", checkAuth, async function(req, res) {
     }
     createUser(req.user);
     editUser(req.user.id, "avatar", req.user.avatar);
-    var banner = await getTag(req.user.id).catch(function () {
-        res.status(404).render("notfound.pug");
-        return
+    await getTag(req.user.id).catch(function () {
+        res.status(404).render("notfound.pug", { user: req.user });
+        return;
     });
     res.redirect(`/${req.user.id}`);
 });
@@ -370,6 +378,17 @@ function checkAuth(req, res, next) {
     res.redirect("/login");
 }
 
+function checkAdmin(req, res, next) {
+    if (req.isAuthenticated()) {
+        if (req.user.admin) {
+            return next()
+        }
+    }
+    res.render("notfound.pug", {
+        user: req.user,
+    });
+}
+
 function getBackgroundList() {
     return fs.readdirSync(path.resolve(dataFolder, "img", "1200x450"));
 }
@@ -540,7 +559,9 @@ app.use(function(req, res, next) {
         }
     }
     res.status(404);
-    res.render("notfound.pug");
+    res.render("notfound.pug", {
+        user: req.user,
+    });
 });
 
 module.exports = {
