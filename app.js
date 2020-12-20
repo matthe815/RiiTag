@@ -148,6 +148,9 @@ app.route("/edit")
         });
     });
 
+app.get("/admin", checkAdmin, function(req, res) {
+    res.render("admin.pug", { user: req.user });
+});
 
 app.get("/create", checkAuth, async function(req, res) {
     if (!fs.existsSync(path.resolve(dataFolder, "tag"))) {
@@ -159,7 +162,11 @@ app.get("/create", checkAuth, async function(req, res) {
         res.status(404).render("notfound.pug", { user: req.user });
         return;
     });
-    res.redirect(`/${req.user.id}`);
+    if (!req.user.admin) {
+        res.redirect(`/${req.user.id}`);
+    } else {
+        res.redirect(`/admin`);
+    }
 });
 
 function getTag(id) {
