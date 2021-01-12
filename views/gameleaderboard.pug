@@ -1,0 +1,23 @@
+extends head
+
+mixin gameCard(game)
+    .col-md-4
+        .card.big-space-bottom
+            .card-header
+                h5.mb-0= wiiTDB[game.gameID]
+            .card-body
+                span.text-white
+                    .container
+                        .row.justify-content-center
+                            .col-12
+
+block content
+    - var i = 0
+    - var c = 0
+    - const c_limit = 3
+    div.big-space-top.big-space-left.big-space-right
+        .container-fluid.justify-content-center
+            .row
+                each game in games
+                    +gameCard(game)
+

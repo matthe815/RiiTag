@@ -11,8 +11,12 @@ const bodyParser = require("body-parser");
 const xml = require("xml");
 const DatabaseDriver = require("./dbdriver");
 const renderMiiFromHex = require("./src/rendermiifromhex");
+const Axios = require("axios");
 
 const db = new DatabaseDriver(path.join(__dirname, "users.db"));
+const gameDb = new DatabaseDriver(path.join(__dirname, "games.db"));
+const coinDb = new DatabaseDriver(path.join(__dirname, "coins.db"));
+var wiiTDB = {};
 const Sentry = require('@sentry/node');
 const express = require("express");
 // const { render } = require("pug");
@@ -61,7 +65,7 @@ app.use(express.static("data/"));
 app.set("view engine", "pug");
 
 app.get("/", function(req, res) {
-    res.render("index.pug", { user: req.user });
+    res.render("index.pug", { user: req.user, tags: getHomeTags() });
 });
 
 
@@ -142,7 +146,7 @@ app.route("/edit")
             });
         }
         res.redirect(`/${req.user.id}`);
-        var banner = await getTag(req.user.id).catch(function () {
+        await getTag(req.user.id).catch(function () {
             res.status(404).render("notfound.pug");
             return
         });
@@ -152,12 +156,27 @@ app.get("/admin", checkAdmin, function(req, res) {
     res.render("admin.pug", { user: req.user });
 });
 
+app.get("^/admin/refresh/:id([0-9]+)", checkAdmin, async function(req, res) {
+    if (!req.params.id) {
+        res.redirect(`/${req.user.id}`);
+    }
+    await getTag(req.params.id).catch(function () {
+        res.status(404).render("notfound.pug");
+        return
+    });
+    res.redirect(`/${req.params.id}`);
+});
+
 app.get("/create", checkAuth, async function(req, res) {
     if (!fs.existsSync(path.resolve(dataFolder, "tag"))) {
         fs.mkdirSync(path.resolve(dataFolder, "tag"));
     }
     createUser(req.user);
     editUser(req.user.id, "avatar", req.user.avatar);
+    var exists = await coinDb.exists("coins", "snowflake", req.user.id);
+    if (!exists) {
+        await coinDb.insert("coins", ["snowflake", "count"], [req.user.id, getUserData(req.user.id).coins]);
+    }
     await getTag(req.user.id).catch(function () {
         res.status(404).render("notfound.pug", { user: req.user });
         return;
@@ -168,6 +187,10 @@ app.get("/create", checkAuth, async function(req, res) {
         res.redirect(`/admin`);
     }
 });
+
+// app.get("/games", async function(req, res) {
+
+// });
 
 function getTag(id) {
     return new Promise(function(resolve, reject) {
@@ -183,7 +206,6 @@ function getTag(id) {
         }
     })
 }
-
 
 app.get("^/:id([0-9]+)/tag.png", async function(req, res) {
     try {
@@ -251,9 +273,11 @@ app.get("/wii", async function(req, res) {
     setUserAttrib(userID, "coins", c + 1);
     setUserAttrib(userID, "games", newGames);
     setUserAttrib(userID, "lastplayed", ["wii-" + gameID, Math.floor(Date.now() / 1000)]);
-    res.status(200).send();
 
-    var banner = await getTag(userID).catch(function () {
+    await gamePlayed(gameID, 0, req.user.id);
+    res.status(200).send(gameID);
+
+    await getTag(userID).catch(function () {
         res.status(404).render("notfound.pug");
         return
     });
@@ -372,11 +396,34 @@ app.get("^/:id([0-9]+)/json", function(req, res) {
     }));
 });
 
+app.get("/leaderboard/games", async function(req, res) {
+    var games = await gameDb.getTableSorted("games", "count", true);
+    var limit = parseInt(req.query.limit);
+    if (!limit || limit > 50 || limit == "NaN") {
+        limit = 10;
+    }
+    console.log(limit);
+    res.render("gameleaderboard.pug", {
+        user: req.user,
+        wiiTDB: wiiTDB,
+        games: games,
+        limit: limit,
+    });
+});
+
+app.get("/cover", async function(req, res) {
+
+});
+
 app.listen(port, async function() {
     // cleanCache();
     // console.log("Cleaned cache");
     await db.create("users", ["id INTEGER PRIMARY KEY", "snowflake TEXT", "key TEXT"]);
+    await gameDb.create("games", ["id INTEGER PRIMARY KEY", "console INTEGER", "gameID TEXT", "count INTEGER"]);
+    await coinDb.create("coins", ["id INTEGER PRIMARY KEY", "snowflake TEXT", "count INTEGER"]);
     // db.insert("users", ["snowflake", "key"], ["test_sf", "test_key"]);
+    await cacheWiiTDB();
+    // console.log(wiiTDB);
     console.log("RiiTag Server listening on port " + port);
 });
 
@@ -425,6 +472,10 @@ function getCoverRegions() {
     return ["EN", "FR", "DE", "ES", "IT", "NL", "PT", "AU", "SE", "DK", "NO", "FI", "TR"];
 }
 
+function getConsoles() {
+    return ["wii", "wiiu", "3ds"];
+}
+
 function getFonts() {
     return JSON.parse(fs.readFileSync(path.resolve(dataFolder, "meta", "fonts.json")))
 }
@@ -460,6 +511,46 @@ function getUserData(id) {
     return jdata;
 }
 
+async function gamePlayed(id, console, user) {
+    var exists = await gameDb.exists("games", "gameID", id);
+    if (!exists) {
+        await gameDb.insert("games", ["console", "gameID", "count"], [console, id, 0]);
+    }
+    await gameDb.increment("games", "gameID", id, "count").catch(function(err) {
+        process.stdout.write(err + "\n");
+    });
+    await coinDb.increment("coins", "snowflake", user, "count").catch(function(err) {
+        process.stdout.write(err + "\n");
+    });
+}
+
+async function cacheWiiTDB() {
+    const url = "http://www.gametdb.com/wiitdb.txt?LANG=ORIG";
+    var ret = false;
+    const response = await Axios({
+        url,
+        method: "GET",
+        responseType: "text",
+    }).catch(function(err) {
+        console.log(err);
+        ret = true;
+    });
+    if (ret) {
+        return;
+    }
+    response.data.split("\r\n").forEach(function(line) {
+        try {
+            var split = line.split(" = ");
+            var key = split[0];
+            var val = split[1];
+            wiiTDB[key] = val;
+        } catch(err) {
+            console.log(`WiiTDB Cache: Failed on ${line}`);
+            console.log(err);
+        }
+    });
+}
+
 async function createUser(user) {
     if (!fs.existsSync(path.resolve(dataFolder, "users", user.id + ".json"))) {
         var ujson = {
@@ -485,13 +576,6 @@ async function createUser(user) {
     }
 }
 
-function cleanCache() {
-    var c = path.resolve(dataFolder, "cache");
-    fs.readdirSync(c).forEach(function(file) {
-        fs.unlinkSync(path.resolve(c, file));
-    });
-}
-
 function generateRandomKey(keyLength) {
     const chars = "QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890";
     var key = "";
@@ -508,10 +592,6 @@ function generateRandomKey(keyLength) {
     }
 
     return key;
-}
-
-function respond(res, message, code=200) {
-    res.status(code).send(message);
 }
 
 async function getUserKey(id) {
@@ -553,6 +633,10 @@ function loadConfig() {
     return JSON.parse(fs.readFileSync("config.json"));
 }
 
+function getHomeTags() {
+    // TODO **URGENT**: Calculate tags to show on front page
+}
+
 app.use(function(req, res, next) {
     var allowed = [
         "/img",
@@ -570,6 +654,139 @@ app.use(function(req, res, next) {
         user: req.user,
     });
 });
+
+function getGameRegion(game) { // determine the game's region by its ID
+    var chars = game.split("");
+    var rc = chars[3];
+    if (rc == "P") {
+        if (this.user.coverregion) {
+            if (this.user.coverregion.toUpperCase().length == 2) { // region names are 2 characters as you can see
+                return this.user.coverregion.toUpperCase();
+            }
+        } else {
+            return "EN";
+        }
+    } else if (rc == "E") {
+        return "US";
+    } else if (rc == "J") {
+        return "JA";
+    } else if (rc == "K") {
+        return "KO";
+    } else if (rc == "W") {
+        return "TW";
+    } else {
+        return "EN";
+    }
+}
+
+function getConsoleType(game) {
+    var chars = game.split("");
+    var code = chars[0];
+    if (game.startsWith("wii-")) {
+        return "wii";
+    } else if (game.startsWith("wiiu-")) {
+        return "wiiu";
+    } else if (game.startsWith("ds-")) {
+        return "ds";
+    } else if (game.startsWith("3ds-")) {
+        return "3ds";
+    } else if (code == "R" || code == "S") {
+        return "wii";
+    } else if (code == "A" || code == "B") {
+        return "wiiu";
+    } else {
+        return "wii";
+    }
+}
+
+function getExtension(covertype, consoletype) {
+    if (consoletype == "wii") {
+        return "png";
+    } else if (consoletype != "wii" && covertype == "cover") {
+        return "jpg";
+    } else {
+        return "png";
+    }
+}
+
+function getCoverType(consoletype) {
+    if (consoletype == "ds" || consoletype == "3ds") {
+        return "box";
+    } else if (this.user.covertype) {
+        return this.user.covertype;
+    } else {
+        return "cover3D";
+    }
+}
+
+function getCoverWidth(covertype) {
+    if (covertype == "cover") {
+        return 160;
+    } else if (covertype == "cover3D") {
+        return 176;
+    } else if (covertype == "disc") {
+        return 160;
+    } else if (covertype == "box") {
+        return 176;
+    } else {
+        return 176;
+    }
+}
+
+function getCoverHeight(covertype, consoletype) {
+    if (covertype == "cover") {
+        if (consoletype == "ds" || consoletype == "3ds") {
+            return 144;
+        } else {
+            return 224;
+        }
+    } else if (covertype == "cover3D") {
+        return 248;
+    } else if (covertype == "disc") {
+        return 160;
+    } else if (covertype == "box") {
+        return 158;
+    } else {
+        return 248;
+    }
+}
+
+function getCoverUrl(consoletype, covertype, region, game, extension) {
+    return `https://art.gametdb.com/${consoletype}/${covertype}/${region}/${game}.${extension}`;
+}
+
+async function downloadGameCover(game, region, covertype, consoletype, extension) {
+    var can = new Canvas.Canvas(this.getCoverWidth(covertype), this.getCoverHeight(covertype, consoletype));
+    var con = can.getContext("2d");
+    var img;
+
+    img = await getImage(this.getCoverUrl(consoletype, covertype, region, game, extension));
+    con.drawImage(img, 0, 0, this.getCoverWidth(covertype), this.getCoverHeight(covertype, consoletype));
+    await savePNG(path.resolve(dataFolder, "cache", `${consoletype}-${covertype}-${game}-${region}.png`), can);
+}
+
+async function cacheGameCover(game, region, covertype, consoletype, extension) {
+    if (!fs.existsSync(path.resolve(dataFolder, "cache"))) {
+        fs.mkdirSync(path.resolve(dataFolder, "cache"));
+    }
+    if (fs.existsSync(path.resolve(dataFolder, "cache", `${consoletype}-${covertype}-${game}-${region}.png`))) {
+        return true;
+    }
+    try {
+        await this.downloadGameCover(game, region, covertype, consoletype, extension);
+    } catch(e) {
+        try {
+            await this.downloadGameCover(game, "EN", covertype, consoletype, extension); // cover might not exist?
+        } catch(e) {
+            try {
+                await this.downloadGameCover(game, "US", covertype, consoletype, extension); // small chance it's US region
+            } catch(e) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
 
 module.exports = {
     dataFolder: dataFolder

@@ -7,6 +7,7 @@ head
     link(rel='stylesheet' href='/assets/css/all.css')
     link(rel='stylesheet' href='/assets/css/styles.css')
     link(rel='stylesheet' href='/assets/css/sidebar.css')
+    script(src='assets/js/jquery.min.js')
     script(src="/assets/js/divpages.js")
 body
     nav.navbar.navbar-light.navbar-expand-md.bg-dark
@@ -20,6 +21,8 @@ body
                 ul.nav.navbar-nav.mr-auto
                     li.nav-item(role='presentation')
                         a.nav-link.text-white-50(href='/') Home
+                    li.nav-item
+                        a.nav-link.text-white-50(href='/leaderboard/games') Leaderboard
                 ul.nav.navbar-nav
                     if !user
                         li.nav-item(role='presentation')
