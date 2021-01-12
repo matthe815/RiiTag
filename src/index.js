@@ -1,20 +1,21 @@
 
-const Canvas = require("canvas");
-const Image = Canvas.Image;
+const {Canvas} = require("canvas");
+const userManager = require("./user-manager");
+const Cover = require("./Cover");
 
-const fs = require("fs");
-const events = require("events");
+const {getImage, savePNG} = require("./utils");
 
-const savePNG = require("./utils").savePNG;
-const getImage = require("./utils").getImage;
+const fs = require("fs"), 
+      events = require("events"), 
+      path = require("path");
 
-const path = require("path");
 const dataFolder = path.resolve(__dirname, "..", "data");
-// const outpath = path.resolve(__dirname, "banner.png"); // debug variable
 
 const guests = {"a": "Guest A","b": "Guest B","c": "Guest C","d": "Guest D","e": "Guest E","f": "Guest F"};
 const guestList = Object.keys(guests);
 guestList.push("undefined");
+
+const defaultFont = "RodinNTLG";
 
 const defaultDrawOrder = [
     "overlay",
@@ -27,302 +28,208 @@ const defaultDrawOrder = [
     "friend_code"
 ]
 
+/**
+ * @typedef {Object} Vector2D
+ * @property {number} width
+ * @property {number} height
+ */
 class Tag extends events.EventEmitter{
     constructor(user, doMake=true) {
         super();
 
-        this.user = this.loadUser(user);
+        this.user = userManager.load(user);
         this.overlay = this.loadOverlay(this.user.overlay);
-        this.savePNG = savePNG;
-        this.getImage = getImage;
 
         if (doMake) this.makeBanner();
     }
 
-    loadUser(json_string) {
-        return JSON.parse(json_string);
-    }
-
+    /**
+     * Draw text onto the tag.
+     * @param {string} font 
+     * @param {number} size 
+     * @param {string} style 
+     * @param {string} color 
+     * @param {string} text 
+     * @param {number} x 
+     * @param {number} y 
+     */
     drawText(font, size, style, color, text, x, y) {
-        // console.log(`${style} ${size}px ${font}`);
         this.ctx.font = `${style} ${size}px ${font}`;
         this.ctx.fillStyle = color;
         this.ctx.fillText(text, size + x, size + y);
     }
 
+    /**
+     * Draw an image onto the tag.
+     * @param {string} source A URL based image source.
+     * @param {number} x 
+     * @param {number} y 
+     */
     async drawImage(source, x=0, y=0) {
-        var obj = this;
-        // console.log(source);
-        getImage(source).then(function(img) {
-            console.log(img);
-            obj.ctx.drawImage(img, x, y);
-        }).catch(function(err) {
-            console.error(err);
-        });
+        this.ctx.drawImage(await getImage(source), x, y);
     }
 
+    /**
+     * Draw a resized version of a provided image.
+     * @param {string} source 
+     * @param {number} x 
+     * @param {number} y 
+     * @param {number} shrinkx 
+     * @param {number} shrinky 
+     */
     async drawImageShrink(source, x=0, y=0, shrinkx=0, shrinky=0) {
-        var obj = this;
-        console.log(source);
-        obj.ctx.drawImage(source, x, y, shrinkx, shrinky);
+        this.ctx.drawImage(source, x, y, shrinkx, shrinky);
     }
 
+    /**
+     * Fetch an image from the provided source repository, and draw a resized version onto the tag.
+     * @param {string} source 
+     * @param {number} x 
+     * @param {number} y 
+     * @param {number} shrinkx 
+     * @param {number} shrinky 
+     */
     async getAndDrawImageShrink(source, x=0, y=0, shrinkx=0, shrinky=0) {
-        var obj = this;
-        getImage(source).then(function(img) {
-            console.log(img);
-            obj.ctx.drawImage(img, x, y, shrinkx, shrinky);
-        }).catch(function(err) {
-            console.error(err);
-        });
+        this.ctx.drawImage(await getImage(source), x, y, shrinkx, shrinky);
     }
 
-    getGameRegion(game) { // determine the game's region by its ID
-        var chars = game.split("");
-        var rc = chars[3];
-        if (rc == "P") {
-            if (this.user.coverregion) {
-                if (this.user.coverregion.toUpperCase().length == 2) { // region names are 2 characters as you can see
-                    return this.user.coverregion.toUpperCase();
-                }
-            } else {
-                return "EN";
-            }
-        } else if (rc == "E") {
-            return "US";
-        } else if (rc == "J") {
-            return "JA";
-        } else if (rc == "K") {
-            return "KO";
-        } else if (rc == "W") {
-            return "TW";
-        } else {
-            return "EN";
-        }
-    }
-
-    getConsoleType(game) {
-        var chars = game.split("");
-        var code = chars[0];
-        if (game.startsWith("wii-")) {
-            return "wii";
-        } else if (game.startsWith("wiiu-")) {
-            return "wiiu";
-        } else if (game.startsWith("ds-")) {
-            return "ds";
-        } else if (game.startsWith("3ds-")) {
-            return "3ds";
-        } else if (code == "R" || code == "S") {
-            return "wii";
-        } else if (code == "A" || code == "B") {
-            return "wiiu";
-        } else {
-            return "wii";
-        }
-    }
-
-    getExtension(covertype, consoletype) {
-        if (consoletype == "wii") {
-            return "png";
-        } else if (consoletype != "wii" && covertype == "cover") {
-            return "jpg";
-        } else {
-            return "png";
-        }
-    }
-
-    getCoverType(consoletype)
-    {
-        if (consoletype == "ds" || consoletype == "3ds") {
-            return "box";
-        } else if (this.user.covertype) {
-            return this.user.covertype;
-        } else {
-            return "cover3D";
-        }
-    }
-
-    getCoverWidth(covertype)
-    {
-        if (covertype == "cover") {
-            return 160;
-        } else if (covertype == "cover3D") {
-            return 176;
-        } else if (covertype == "disc") {
-            return 160;
-        } else if (covertype == "box") {
-            return 176;
-        } else {
-            return 176;
-        }
-    }
-
-    getCoverHeight(covertype, consoletype)
-    {
-        if (covertype == "cover") {
-            if (consoletype == "ds" || consoletype == "3ds") {
-                return 144;
-            } else {
-                return 224;
-            }
-        } else if (covertype == "cover3D") {
-            return 248;
-        } else if (covertype == "disc") {
-            return 160;
-        } else if (covertype == "box") {
-            return 158;
-        } else {
-            return 248;
-        }
-    }
-
+    /**
+     * Return the user's coin image.
+     * @returns {image}
+     */
     getCoinImage()
     {
-        if (this.user.coin) {
-            if (this.user.coin == "default") {
-                return this.overlay.coin_icon.img;
-            }
-            return this.user.coin;
-        } else {
-            return "mario"; // the mario coin is the default image
-        }
+        if (!this.user.coin) // Stop the operation if the user has no specified coin.
+            return "mario";
+
+        return (this.user.coin == "default") ? 
+            this.overlay.coin_icon.img 
+            : this.user.coin;
     }
 
+    /**
+     * Obtain the font to be used when drawing text.
+     * @param {string} type The field-type to insert into.
+     * @returns {string}
+     */
     getFont(type) {
-        const defaultFont = "RodinNTLG";
-
-        if (this.overlay[type].font_family) {
-            if (this.user.font == "default" || this.overlay[type].force_font == "true") {
-                return this.overlay[type].font_family;
-            } else {
-                return this.user.font;
-            }
-        } else {
-            if (this.user.font == "default") {
-                return defaultFont;
-            } else {
-                return this.user.font;
-            }
-        }
+        if (this.user.font != "default" && this.overlay[type].force_font != "true")
+            return this.user.font;
+        else
+            return defaultFont;
     }
 
-    getCoverUrl(consoletype, covertype, region, game, extension) {
-        return `https://art.gametdb.com/${consoletype}/${covertype}/${region}/${game}.${extension}`;
+    /**
+     * Build an API cover-url using provided parameters.
+     * @param {Cover} cover
+     * @returns {string}
+     */
+    getCoverUrl(cover) {
+        return `https://art.gametdb.com/${cover.getConsole()}/${cover.getType()}/${cover.getRegion}/${cover.game}.${cover.getExtension()}`;
     }
 
-    async downloadGameCover(game, region, covertype, consoletype, extension) {
-        var can = new Canvas.Canvas(this.getCoverWidth(covertype), this.getCoverHeight(covertype, consoletype));
-        var con = can.getContext("2d");
-        var img;
-
-        img = await getImage(this.getCoverUrl(consoletype, covertype, region, game, extension));
-        con.drawImage(img, 0, 0, this.getCoverWidth(covertype), this.getCoverHeight(covertype, consoletype));
-        await savePNG(path.resolve(dataFolder, "cache", `${consoletype}-${covertype}-${game}-${region}.png`), can);
+    /**
+     * Download and cache a game cover, if a cache already exists it'll return the cache.
+     * @param {Cover} cover
+     */
+    async getCover(cover) {
+        return this.downloadCover(cover);
     }
 
-    async cacheGameCover(game, region, covertype, consoletype, extension) {
-        if (!fs.existsSync(path.resolve(dataFolder, "cache"))) {
-            fs.mkdirSync(path.resolve(dataFolder, "cache"));
-        }
-        if (fs.existsSync(path.resolve(dataFolder, "cache", `${consoletype}-${covertype}-${game}-${region}.png`))) {
-            return true;
-        }
-        try {
-            await this.downloadGameCover(game, region, covertype, consoletype, extension);
-        } catch(e) {
-            try {
-                await this.downloadGameCover(game, "EN", covertype, consoletype, extension); // cover might not exist?
-            } catch(e) {
-                try {
-                    await this.downloadGameCover(game, "US", covertype, consoletype, extension); // small chance it's US region
-                } catch(e) {
-                    return false;
-                }
-            }
-        }
-        return true;
+    /**
+     * Download a game cover and then save it to the 
+     * @param {Cover} cover
+     */
+    async downloadCover(cover) {
+        let dimensions = this.getCoverDimensions(covertype, consoletype);
+        let canvas = new Canvas(dimensions.width, dimensions.height)
+                        .getContext("2d");
+
+        let image = await getImage(this.getCoverUrl(cover));
+        canvas.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+        await savePNG(path.resolve(dataFolder, "cache", `${game}.png`), canvas);
+        return canvas;
     }
 
-    async cacheAvatar() {
-        // if (!fs.existsSync(path.resolve(dataFolder, "avatars"))) {
-        //     fs.mkdirSync(path.resolve(dataFolder, "avatars"));
-        // }
-        // if (fs.existsSync(path.resolve(dataFolder, "avatars", `${this.user.id}.png`))) {
-        //     return;
-        // }
-        var can = new Canvas.Canvas(512, 512);
-        if (!fs.existsSync(path.resolve(dataFolder, "avatars"))) {
+    /**
+     * Download the avatar provided for the tag.
+     */
+    async downloadAvatar() {
+        if (!fs.existsSync(path.resolve(dataFolder, "avatars")))
             fs.mkdirSync(path.resolve(dataFolder, "avatars"));
-        }
-        var con = can.getContext("2d");
-        var img;
-        try {
-            img = await getImage(`https://cdn.discordapp.com/avatars/${this.user.id}/${this.user.avatar}.jpg?size=512`);
-            con.drawImage(img, 0, 0, 512, 512);
-            await savePNG(path.resolve(dataFolder, "avatars", `${this.user.id}.png`), can);
-        } catch(e) {
-            return false;
-        }
+
+        let canvas = new Canvas.Canvas(512, 512).getContext("2d"),
+            avatar = await getImage(`https://cdn.discordapp.com/avatars/${this.user.id}/${this.user.avatar}.jpg?size=512`);
+
+        canvas.drawImage(avatar, 0, 0, 512, 512);
+        await savePNG(path.resolve(dataFolder, "avatars", `${this.user.id}.png`), canvas);
     }
 
+    /**
+     * Draw the cover onto the the tag.
+     * @param {string} game 
+     * @param {boolean} draw Whether or not to commit.
+     * @returns {boolean} Whether or not the operation succeeded.
+     */
     async drawGameCover(game, draw) {
-        var consoletype = this.getConsoleType(game);
-        var covertype = this.getCoverType(consoletype);
-        game = game.replace("wii-", "").replace("wiiu-", "").replace("3ds-", "").replace("ds-", "");
-        var region = this.getGameRegion(game);
-        var extension = this.getExtension(covertype, consoletype);
-        var cache = await this.cacheGameCover(game, region, covertype, consoletype, extension);
+        game = game.replace(/\w{0,5}(?=-)/, "");
+
+        let cover = new Cover(game, user),
+            cache = await this.getCover(cover);
+
         if (cache && draw) {
-            var inc = 0;
-            if (consoletype == "ds" || consoletype == "3ds") {
-                if (covertype == "box") {
-                    inc = 87;
-                } else if (covertype == "cover") {
-                    inc = 80;
-                }
+            let inc = 0;
+
+            switch (cover.getConsole()) {
+                case "ds":
+                case "3ds":
+                    inc = cover.getType() == "box" ? 87 : 80;
             }
-            await this.drawImage(path.resolve(dataFolder, "cache", `${consoletype}-${covertype}-${game}-${region}.png`), this.covCurX, this.covCurY + inc);
-            // console.log(game);
+
+            await this.drawImage(path.resolve(dataFolder, "cache", `${game}.png`), this.covCurX, this.covCurY + inc);
             this.covCurX += this.covIncX;
             this.covCurY += this.covIncY;
         }
+
         return cache;
     }
 
+    /**
+     * Draw the user avatar onto the tag.
+     */
     async drawAvatar() {
-        if (this.overlay.avatar) {
-            await this.cacheAvatar();
-            await this.getAndDrawImageShrink(path.resolve(dataFolder, "avatars", `${this.user.id}.png`), this.overlay.avatar.x, this.overlay.avatar.y, this.overlay.avatar.size, this.overlay.avatar.size);
-        }
+        if (!this.overlay.avatar)
+            return;
+
+        await this.cacheAvatar();
+        await this.getAndDrawImageShrink(path.resolve(dataFolder, "avatars", `${this.user.id}.png`), this.overlay.avatar.x, this.overlay.avatar.y, this.overlay.avatar.size, this.overlay.avatar.size);
     }
 
+    /**
+     * Draw the user mii onto the tag.
+     */
     async drawMii() {
-        if (!this.user.mii_data || this.user.mii_data == "") {
+        if (!this.user.mii_data || this.user.mii_data == "")
             this.user.mii_data = "undefined";
-        }
-        if (this.overlay.mii) {
-            if (guestList.includes(this.user.mii_data)) {
-                await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", "guests", `${this.user.mii_data}.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size);
-            } else {
-                await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", `${this.user.id}.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size).catch(async function(e) {
-                    console.error("Couldn't render Mii for " + user.id + ". Falling back to undefined.");
-                    await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", "guests", `undefined.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size);
-                });
-            }
+
+        if (!this.overlay.mii)
+            return;
+        
+        if (guestList.includes(this.user.mii_data))
+            await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", "guests", `${this.user.mii_data}.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size);
+        else {
+            await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", `${this.user.id}.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size).catch(async e => {
+                await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", "guests", `undefined.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size);
+            });
         }
     }
 
-    // async savePNG(out, c) {
-    //     return new Promise(function(resolve) {
-    //         c.createPNGStream().pipe(fs.createWriteStream(out)).on("close", function() {
-    //             // console.log("File written");
-    //             resolve();
-    //         });
-    //     });
-    // }
-
+    /**
+     * Load a required font into memory.
+     * @param {string} file 
+     */
     async loadFont(file) {
-        var font = JSON.parse(fs.readFileSync(path.resolve(dataFolder, "fonts", file)));
+        let font = JSON.parse(fs.readFileSync(path.resolve(dataFolder, "fonts", file)));
         
         return new Promise(function(resolve) {
             for (var style of font.styles) {
@@ -333,23 +240,26 @@ class Tag extends events.EventEmitter{
                         style: style.style
                     }
                 );
-                // console.log("Loaded font");
                 resolve();
             }
         });
     }
 
+    /**
+     * Load multiple required fonts into memory.
+     */
     async loadFonts() {
         for (var font of fs.readdirSync(path.resolve(dataFolder, "fonts"))) {
             await this.loadFont(font);
         }
     }
 
+    /**
+     * Get the user's current coin count.
+     * @returns {number}
+     */
     getCoins() {
-        if (this.user.coins > this.overlay.coin_count.max) {
-            return this.overlay.coin_count.max;
-        }
-        return this.user.coins;
+        return Math.min(this.user.coins, this.overlay.coin_count.max);
     }
 
     loadOverlay(file) {
@@ -381,7 +291,7 @@ class Tag extends events.EventEmitter{
         await this.loadFonts();
         var i = 0;
 
-        this.canvas = new Canvas.Canvas(this.overlay.width, this.overlay.height);
+        this.canvas = new Canvas(this.overlay.width, this.overlay.height);
         this.ctx = this.canvas.getContext("2d");
 
         // background

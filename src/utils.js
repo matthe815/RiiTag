@@ -4,22 +4,15 @@ const Image = Canvas.Image;
 
 async function savePNG(out, c) {
     return new Promise(function(resolve) {
-        c.createPNGStream().pipe(fs.createWriteStream(out)).on("close", function() {
-            resolve();
-        });
+        c.createPNGStream().pipe(fs.createWriteStream(out)).on("close", resolve());
     });
 }
 
 async function getImage(source) {
     var img = new Image();
-    return new Promise(function(resolve, reject) {
-        img.onload = function() {
-            resolve(img);
-        }
-        img.onerror = function(err) {
-            reject(err);
-        }
-        console.log(source);
+    return new Promise((resolve, reject) => {
+        img.onload = resolve(img);
+        img.onerror = reject(err);
         img.src = source;
     });
 }
