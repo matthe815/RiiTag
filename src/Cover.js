@@ -111,3 +111,12 @@ class Cover
 }
 
 module.exports = Cover;
+
+/**
+* Build an API cover-url using provided parameters.
+* @param {Cover} cover
+* @returns {string}
+*/
+module.exports.getCoverUrl = (cover) => {
+   return `https://art.gametdb.com/${cover.getConsole()}/${cover.getType()}/${cover.getRegion}/${cover.game}.${cover.getExtension()}`;
+}

@@ -1,6 +1,8 @@
 
 const {Canvas} = require("canvas");
 const userManager = require("./user-manager");
+const dataManager = require("./data-manager");
+const cacheManager = require("./cache-manager");
 const Cover = require("./Cover");
 
 const {getImage, savePNG} = require("./utils");
@@ -8,8 +10,6 @@ const {getImage, savePNG} = require("./utils");
 const fs = require("fs"), 
       events = require("events"), 
       path = require("path");
-
-const dataFolder = path.resolve(__dirname, "..", "data");
 
 const guests = {"a": "Guest A","b": "Guest B","c": "Guest C","d": "Guest D","e": "Guest E","f": "Guest F"};
 const guestList = Object.keys(guests);
@@ -44,7 +44,7 @@ class Tag extends events.EventEmitter{
     }
 
     /**
-     * Draw text onto the tag.
+     * Draw any specified text onto the tag using specified font, and other parameters.
      * @param {string} font 
      * @param {number} size 
      * @param {string} style 
@@ -66,7 +66,7 @@ class Tag extends events.EventEmitter{
      * @param {number} y 
      */
     async drawImage(source, x=0, y=0) {
-        this.ctx.drawImage(await getImage(source), x, y);
+        this.ctx.drawImage(await cacheManager.getLocal(source), x, y);
     }
 
     /**
@@ -75,22 +75,10 @@ class Tag extends events.EventEmitter{
      * @param {number} x 
      * @param {number} y 
      * @param {number} shrinkx 
-     * @param {number} shrinky 
+     * @param {number} shrinky
      */
-    async drawImageShrink(source, x=0, y=0, shrinkx=0, shrinky=0) {
-        this.ctx.drawImage(source, x, y, shrinkx, shrinky);
-    }
-
-    /**
-     * Fetch an image from the provided source repository, and draw a resized version onto the tag.
-     * @param {string} source 
-     * @param {number} x 
-     * @param {number} y 
-     * @param {number} shrinkx 
-     * @param {number} shrinky 
-     */
-    async getAndDrawImageShrink(source, x=0, y=0, shrinkx=0, shrinky=0) {
-        this.ctx.drawImage(await getImage(source), x, y, shrinkx, shrinky);
+    async drawResizedImage(source, x=0, y=0, shrinkx=0, shrinky=0) {
+        this.ctx.drawImage((await getImage(source)), x, y, shrinkx, shrinky);
     }
 
     /**
@@ -120,15 +108,6 @@ class Tag extends events.EventEmitter{
     }
 
     /**
-     * Build an API cover-url using provided parameters.
-     * @param {Cover} cover
-     * @returns {string}
-     */
-    getCoverUrl(cover) {
-        return `https://art.gametdb.com/${cover.getConsole()}/${cover.getType()}/${cover.getRegion}/${cover.game}.${cover.getExtension()}`;
-    }
-
-    /**
      * Download and cache a game cover, if a cache already exists it'll return the cache.
      * @param {Cover} cover
      */
@@ -136,23 +115,23 @@ class Tag extends events.EventEmitter{
         return this.downloadCover(cover);
     }
 
+
     /**
-     * Download a game cover and then save it to the 
-     * @param {Cover} cover
+     * @deprecated
      */
     async downloadCover(cover) {
         let dimensions = this.getCoverDimensions(covertype, consoletype);
         let canvas = new Canvas(dimensions.width, dimensions.height)
                         .getContext("2d");
 
-        let image = await getImage(this.getCoverUrl(cover));
+        let image = await cacheManager.get(cover, Cover.getCoverUrl(cover));
         canvas.drawImage(image, 0, 0, dimensions.width, dimensions.height);
         await savePNG(path.resolve(dataFolder, "cache", `${game}.png`), canvas);
         return canvas;
     }
 
     /**
-     * Download the avatar provided for the tag.
+     * @deprecated
      */
     async downloadAvatar() {
         if (!fs.existsSync(path.resolve(dataFolder, "avatars")))
@@ -162,7 +141,7 @@ class Tag extends events.EventEmitter{
             avatar = await getImage(`https://cdn.discordapp.com/avatars/${this.user.id}/${this.user.avatar}.jpg?size=512`);
 
         canvas.drawImage(avatar, 0, 0, 512, 512);
-        await savePNG(path.resolve(dataFolder, "avatars", `${this.user.id}.png`), canvas);
+        await savePNG(dataManager.build("avatars", this.user.id), canvas);
     }
 
     /**
@@ -184,11 +163,12 @@ class Tag extends events.EventEmitter{
                 case "ds":
                 case "3ds":
                     inc = cover.getType() == "box" ? 87 : 80;
+                break;
             }
 
-            await this.drawImage(path.resolve(dataFolder, "cache", `${game}.png`), this.covCurX, this.covCurY + inc);
-            this.covCurX += this.covIncX;
-            this.covCurY += this.covIncY;
+            await this.drawImage(dataManager.build("cache", game), this.coverCurrentX, this.coverCurrentY + inc);
+            this.coverCurrentX += this.coverIncrementX;
+            this.coverCurrentY += this.coverIncrementY;
         }
 
         return cache;
@@ -202,7 +182,7 @@ class Tag extends events.EventEmitter{
             return;
 
         await this.cacheAvatar();
-        await this.getAndDrawImageShrink(path.resolve(dataFolder, "avatars", `${this.user.id}.png`), this.overlay.avatar.x, this.overlay.avatar.y, this.overlay.avatar.size, this.overlay.avatar.size);
+        await this.drawResizedImage(dataManager.build("avatar", this.user.id), this.overlay.avatar.x, this.overlay.avatar.y, this.overlay.avatar.size, this.overlay.avatar.size);
     }
 
     /**
@@ -215,13 +195,12 @@ class Tag extends events.EventEmitter{
         if (!this.overlay.mii)
             return;
         
-        if (guestList.includes(this.user.mii_data))
-            await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", "guests", `${this.user.mii_data}.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size);
-        else {
-            await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", `${this.user.id}.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size).catch(async e => {
-                await this.getAndDrawImageShrink(path.resolve(dataFolder, "miis", "guests", `undefined.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size);
-            });
-        }
+        if (guestList.includes(this.user.mii_data)) // Override with mii data.
+            return await this.drawResizedImage(dataManager.build(`miis/guests/${this.user.mii_data}.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size);
+        
+        await this.drawResizedImage(dataManager.build("miis", `${this.user.id}.png`), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size).catch(async e => {
+            await this.drawResizedImage(dataManager.build("miis", "guests", "undefined.png"), this.overlay.mii.x, this.overlay.mii.y, this.overlay.mii.size, this.overlay.mii.size);
+        });
     }
 
     /**
@@ -229,11 +208,11 @@ class Tag extends events.EventEmitter{
      * @param {string} file 
      */
     async loadFont(file) {
-        let font = JSON.parse(fs.readFileSync(path.resolve(dataFolder, "fonts", file)));
+        let font = JSON.parse(fs.readFileSync(dataManager.build("fonts", file)));
         
-        return new Promise(function(resolve) {
-            for (var style of font.styles) {
-                Canvas.registerFont(path.resolve(dataFolder, "fontfiles", style.file),
+        return new Promise(resolve => {
+            font.styles.forEach(style => {
+                require("canvas").registerFont(dataManager.build("fontfiles", style.file),
                     {
                         family: font.family,
                         weight: style.weight,
@@ -241,7 +220,7 @@ class Tag extends events.EventEmitter{
                     }
                 );
                 resolve();
-            }
+            });
         });
     }
 
@@ -249,9 +228,9 @@ class Tag extends events.EventEmitter{
      * Load multiple required fonts into memory.
      */
     async loadFonts() {
-        for (var font of fs.readdirSync(path.resolve(dataFolder, "fonts"))) {
+        fs.readdirSync(dataManager.build("fonts")).forEach(async font => {
             await this.loadFont(font);
-        }
+        });
     }
 
     /**
@@ -262,31 +241,32 @@ class Tag extends events.EventEmitter{
         return Math.min(this.user.coins, this.overlay.coin_count.max);
     }
 
+    /**
+     * Load the user's overlay from a JSON file and build it.
+     * @param {string} file 
+     */
     loadOverlay(file) {
-        var overlay = JSON.parse(fs.readFileSync(path.resolve(dataFolder, "overlays", file)));
+        let overlay = JSON.parse(fs.readFileSync(dataManager.build("overlays", file)));
         
-        this.covStartX = overlay.cover_start_x;
-        this.covStartY = overlay.cover_start_y;
+        this.coverStartX = overlay.cover_start_x;
+        this.coverStartY = overlay.cover_start_y;
         
-        var covertype = this.getCoverType(false);
+        let covertype = "ds"
         
-        if (covertype == "cover") {
-            this.covStartY += 24;
-        } else if (covertype == "disc") {
-            this.covStartY += 88;
-        }
+        this.coverStartY += covertype == "cover" ? 24 : 88;
 
-        this.covIncX = overlay.cover_increment_x;
-        this.covIncY = overlay.cover_increment_y;
+        this.coverIncrementX = overlay.cover_increment_x;
+        this.coverIncrementY = overlay.cover_increment_y;
     
-        this.covCurX = this.covStartX;
-        this.covCurY = this.covStartY;
+        this.coverCurrentX = this.coverStartX;
+        this.coverCurrentY = this.coverStartY;
     
         return overlay;
     }
 
-    
-
+    /**
+     * Completely generate the banner required for the tag.
+     */
     async makeBanner() {
         await this.loadFonts();
         var i = 0;
@@ -295,50 +275,35 @@ class Tag extends events.EventEmitter{
         this.ctx = this.canvas.getContext("2d");
 
         // background
-        await this.drawImage(path.resolve(dataFolder, this.user.bg));
+        await this.drawImage(dataManager.build(this.user.bg));
 
         // overlay image
-        await this.drawImage(path.resolve(dataFolder, this.overlay.overlay_img));
+        await this.drawImage(dataManager.build(this.overlay.overlay_img));
 
         // game covers
         var games_draw = []
         
-        if (this.user.sort.toLowerCase() != "none") {
-            for (var game of this.user.games.reverse().slice(this.overlay.max_covers * -1)) {
-                if (i < this.overlay.max_covers && game != "") {
-                    var draw = await this.drawGameCover(game, false);
-                    if (draw) {
+        if (this.user.sort.toLowerCase() != "none") { // Apply the user sort preference.
+            this.user.games.reverse().slice(this.overlay.max_covers * -1).forEach(game => {
+                for (i < this.overlay.max_covers && game!=""; i++;) {
+                    if (await (this.drawGameCover(game, false)))
                         games_draw.push(game)
-                        i++;
-                    }
                 }
-            }
+            });
         }
 
-        // this code basically finds any blank spots where covers can be
-        // the blank spots are because it can't find the cover
-        // if there's blank spots, fill them in with covers until we reac the maximum amount
-        for (let j = this.overlay.max_covers; j < this.user.games.length; j++) {
-            if (games_draw.length < this.overlay.max_covers && games_draw.length != this.user.games.length && game != "" && !games_draw.includes(this.user.games.reverse()[j])) {
-                var draw = await this.drawGameCover(this.user.games.reverse()[j], false);
-                if (draw) {
-                    games_draw.unshift(this.user.games.reverse()[j])
-                }
-            }
-        }
-
-        // finally draw the covers
-        for (var game of games_draw) {
-            var draw = await this.drawGameCover(game, true);
-        }
+        // Loop through the previously defined array and draw the games.
+        games_draw.forEach(async game => {
+            await this.drawGameCover(game, true);
+        });
 
         // flag icon
-        await this.drawImage(path.resolve(dataFolder, "flags", `${this.user.region}.png`),
+        await this.drawImage(dataManager.build("flags", `${this.user.region}.png`),
             this.overlay.flag.x,
             this.overlay.flag.y);
 
         // coin image/text
-        await this.drawImage(path.resolve(dataFolder, "img", "coin", this.getCoinImage() + ".png"),
+        await this.drawImage(dataManager.build("img", "coin", `${this.getCoinImage()}.png`),
             this.overlay.coin_icon.x,
             this.overlay.coin_icon.y);
 
@@ -372,7 +337,7 @@ class Tag extends events.EventEmitter{
         // avatar
         if (this.user.useavatar == "true") {
             if (this.overlay.avatar.background) {
-                await this.drawImage(path.resolve(dataFolder, this.overlay.avatar.background),
+                await this.drawImage(dataManager.build(this.overlay.avatar.background),
                     this.overlay.avatar.background_x,
                     this.overlay.avatar.background_y
                 );
@@ -382,7 +347,7 @@ class Tag extends events.EventEmitter{
 
         if (this.user.usemii == "true") {
             if (this.overlay.mii.background) {
-                await this.drawImage(path.resolve(dataFolder, this.overlay.avatar.background),
+                await this.drawImage(dataManager.build(this.overlay.avatar.background),
                     this.overlay.mii.background_x,
                     this.overlay.mii.background_y
                 );
@@ -390,13 +355,7 @@ class Tag extends events.EventEmitter{
             await this.drawMii();
         }
 
-        await this.savePNG(path.resolve(dataFolder, "tag", `${this.user.id}.max.png`), this.canvas);
-
-        this.canvas2 = new Canvas.Canvas(this.overlay.width / 3, this.overlay.height / 3);
-        this.ctx = this.canvas2.getContext("2d");
-        await this.drawImageShrink(this.canvas, 0, 0, this.overlay.width / 3, this.overlay.height / 3);
-        await this.savePNG(path.resolve(dataFolder, "tag", `${this.user.id}.png`), this.canvas2);
-
+        await savePNG(dataManager.build("tag", `${this.user.id}.png`), this.canvas);
         this.emit("done");
     }
 }
@@ -404,25 +363,23 @@ class Tag extends events.EventEmitter{
 module.exports = Tag;
 
 if (module == require.main) {
-    var jstring = fs.readFileSync(path.resolve(dataFolder, "debug", "user1.json"));
-  
+    var jstring = fs.readFileSync(dataManager.build("debug", "user1.json"));
     var banner = new Tag(jstring, true);
     var maxbanner = new Tag(jstring, false);
+    var stream = banner.pngStream;
 
-    banner.once("done", function () {
-        var out = fs.createWriteStream(path.resolve(dataFolder, "debug", "user1.png"));
-        var stream = banner.pngStream;
+    banner.once("done", () => {
+        let out = fs.createWriteStream(dataManager.build("debug", "user1.png"));
 
-        stream.on('data', function (chunk) {
+        stream.on('data', chunk => {
             out.write(chunk);
         });
     });
 
-    maxbanner.once("done", function () {
-        var out = fs.createWriteStream(path.resolve(dataFolder, "debug", "user1.max.png"));
-        var stream = banner.pngStream;
+    maxbanner.once("done", () => {
+        let out = fs.createWriteStream(dataManager.build("debug", "user1.max.png"));
 
-        stream.on('data', function (chunk) {
+        stream.on('data', chunk => {
             out.write(chunk);
         });
     });
