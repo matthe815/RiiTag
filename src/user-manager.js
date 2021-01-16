@@ -45,7 +45,7 @@ module.exports.edit = (id, keypair) => {
  * @param {string} key Attribute key. 
  */
 module.exports.getAttribute = (id, key) => {
-    var user = get(id);
+    var user = module.exports.get(id);
     return user[key] || null;
 }
 

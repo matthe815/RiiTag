@@ -1,3 +1,7 @@
+const { Canvas, Image } = require("canvas"),
+      { savePNG, getImage } = require("./utils"),
+      dataManager = require("./data-manager");
+
 /**
  * The base Cover constructor and de-constructor.
  */
@@ -5,7 +9,7 @@ class Cover
 {
     constructor(game, user)
     {
-        this.game = game;
+        this.game = game.substr(1);
         this.user = user;
     }
 
@@ -38,7 +42,7 @@ class Cover
      */
     getConsole() {
         var consoleCode = this.game[0], // Obtain the console-level code.
-            consoleBase = subString(0, this.game.indexOf("-")); // Strip everything behind the hyphen to obtain the base.
+            consoleBase = this.game.substr(0, this.game.indexOf("-")); // Strip everything behind the hyphen to obtain the base.
 
         switch (consoleBase) {
             case "wii": 
@@ -85,7 +89,7 @@ class Cover
             case "3ds":
                 return "box";
             default:
-                return this.user.covertype||"cover3D";
+                return "cover3D";
         }
     }
 
@@ -108,6 +112,18 @@ class Cover
                 return {width: 176, height: 248};
         }
     }
+
+    async downloadCover()
+    {
+        let dimensions = this.getDimensions();
+        let canvas = new Canvas(dimensions.width, dimensions.height),
+            ctx = canvas.getContext("2d");
+
+        let image = await getImage(module.exports.getCoverUrl(this));
+        ctx.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+        await savePNG(dataManager.build("cache", `${this.game}.png`), canvas);
+        return canvas;
+    }
 }
 
 module.exports = Cover;
@@ -118,5 +134,5 @@ module.exports = Cover;
 * @returns {string}
 */
 module.exports.getCoverUrl = (cover) => {
-   return `https://art.gametdb.com/${cover.getConsole()}/${cover.getType()}/${cover.getRegion}/${cover.game}.${cover.getExtension()}`;
+   return `https://art.gametdb.com/${cover.getConsole()}/${cover.getType()}/${cover.getRegion()}/${cover.game}.${cover.getExtension()}`;
 }

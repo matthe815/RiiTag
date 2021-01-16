@@ -207,14 +207,14 @@ app.get("^/:id([0-9]+)/tag.png", async (req, res) => {
  * Take a supplied user object, and increment the total coin number. Add a new game if it isn't currently present.
  * @param {User} user 
  */
-async function incrementUserCoins(key, wiiu=false, ids=null) {
-    var userID = await getUserID(key);
+async function incrementUserCoins(res, key, gameID, wiiu=false, ids=null) {
+    var userID = await userManager.getID(key);
 
     if (!userID)
         return res.status(400).send();
 
     if (userManager.getAttribute(userID, "lastplayed")) {
-        if (Math.floor(Date.now() / 1000) - getUserAttrib(userID, "lastplayed")[1] < 60)
+        if (Math.floor(Date.now() / 1000) - userManager.getAttribute(userID, "lastplayed")[1] < 60)
             return res.status(429).send(); // cooldown
     }
 
@@ -228,6 +228,10 @@ async function incrementUserCoins(key, wiiu=false, ids=null) {
         lastPlayed: [`wii-${gameID}`, Math.floor(Date.now() / 1000)]
     });
     
+    await getTag(userID).catch(() => {
+        return res.status(404).render("notfound.pug");
+    });
+
     res.status(200).send();
 }
 
@@ -236,13 +240,9 @@ app.get("/wii", async (req, res) => {
         gameID = req.query.game || "";
 
     if (key == "" || gameID == "")
-        return res.status(400).send();
+        return res.status(400);
 
-    incrementUserCoins(key);
-
-    await getTag(userID).catch(() => {
-        return res.status(404).render("notfound.pug");
-    });
+    incrementUserCoins(res, key, gameID);
 })
 .get("/wiiu", async (req, res) => {
     var key = req.query.key || "";
@@ -251,13 +251,9 @@ app.get("/wii", async (req, res) => {
     var ids = JSON.parse(fs.readFileSync(dataManager.build("ids", "wiiu.json"))) // 16 digit TID -> 4 or 6 digit game ID
 
     if (key == "" || gameTID == "")
-        return res.status(400).send();
+        return res.status(400);
 
-    incrementUserCoins(key, true, ids);
-
-    await getTag(userID).catch(() => {
-        return res.status(404).render("notfound.pug");
-    });
+    incrementUserCoins(res, key, "", true, ids);
 });
 
 app.get("/Wiinnertag.xml", checkAuth, async (req, res) => {
@@ -275,7 +271,7 @@ app.get("/Wiinnertag.xml", checkAuth, async (req, res) => {
 });
 
 
-app.get("^/:id([0-9]+)", function(req, res, next) {
+app.get("^/:id([0-9]+)", (req, res, next) => {
     var userData = userManager.get(req.params.id);
     
     if (!userData)

@@ -1,0 +1,13 @@
+extends head
+
+block content
+    div.d-flex#wrapper
+        div#sidebar-wrapper
+            div.sidebar-heading Admin Panel
+            div.list-group.list-group-flush
+                a.list-group-item.list-group-item-action.div-btn(href="#" target="#dashboard") Dashboard
+
+        div.page-content-wrapper.div-page#dashboard
+            h1.text-white= `You're an admin, ${user.username}!`
+
+        script(src="/assets/js/admin.js")

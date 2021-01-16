@@ -112,22 +112,7 @@ class Tag extends events.EventEmitter{
      * @param {Cover} cover
      */
     async getCover(cover) {
-        return this.downloadCover(cover);
-    }
-
-
-    /**
-     * @deprecated
-     */
-    async downloadCover(cover) {
-        let dimensions = this.getCoverDimensions(covertype, consoletype);
-        let canvas = new Canvas(dimensions.width, dimensions.height)
-                        .getContext("2d");
-
-        let image = await cacheManager.get(cover, Cover.getCoverUrl(cover));
-        canvas.drawImage(image, 0, 0, dimensions.width, dimensions.height);
-        await savePNG(path.resolve(dataFolder, "cache", `${game}.png`), canvas);
-        return canvas;
+        return cover.downloadCover();
     }
 
     /**
@@ -150,28 +135,13 @@ class Tag extends events.EventEmitter{
      * @param {boolean} draw Whether or not to commit.
      * @returns {boolean} Whether or not the operation succeeded.
      */
-    async drawGameCover(game, draw) {
+    async drawGameCover(game) {
         game = game.replace(/\w{0,5}(?=-)/, "");
 
-        let cover = new Cover(game, user),
-            cache = await this.getCover(cover);
-
-        if (cache && draw) {
-            let inc = 0;
-
-            switch (cover.getConsole()) {
-                case "ds":
-                case "3ds":
-                    inc = cover.getType() == "box" ? 87 : 80;
-                break;
-            }
-
-            await this.drawImage(dataManager.build("cache", game), this.coverCurrentX, this.coverCurrentY + inc);
-            this.coverCurrentX += this.coverIncrementX;
-            this.coverCurrentY += this.coverIncrementY;
-        }
-
-        return cache;
+        let image = await getImage(dataManager.build("cache", `${game.substr(1)}.png`));
+        await this.drawImage(image, this.coverCurrentX, this.coverCurrentY);
+        this.coverCurrentX += this.coverIncrementX;
+        this.coverCurrentY += this.coverIncrementY;
     }
 
     /**
@@ -284,11 +254,8 @@ class Tag extends events.EventEmitter{
         var games_draw = []
         
         if (this.user.sort.toLowerCase() != "none") { // Apply the user sort preference.
-            this.user.games.reverse().slice(this.overlay.max_covers * -1).forEach(game => {
-                for (i < this.overlay.max_covers && game!=""; i++;) {
-                    if (await (this.drawGameCover(game, false)))
-                        games_draw.push(game)
-                }
+            this.user.games.reverse().slice(this.overlay.max_covers * -1).forEach(async game => {
+                await this.drawGameCover(game);
             });
         }
 
