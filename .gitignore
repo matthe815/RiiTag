@@ -7,6 +7,6 @@ data/avatars/*
 data/tag/*
 !data/users/important_file
 config.json
-users.db
+*.db
 *.rcd
 data/miis
