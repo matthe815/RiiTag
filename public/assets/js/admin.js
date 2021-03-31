@@ -1,2 +1,2 @@
-var pages = $("div[class=div-page]");
-var buttons = $("a[class=div-btn]")
+const pages = $('div[class=div-page]')
+const buttons = $('a[class=div-btn]')
