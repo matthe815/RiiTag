@@ -24,6 +24,27 @@ guestList.push("undefined");
 
 const port = config.port || 3000;
 
+const defaultUserData = {
+    // name: user.username,
+    // id: user.id,
+    games: [],
+    lastplayed: [],
+    coins: 0,
+    friend_code: "0000 0000 0000 0000",
+    region: "rc24",
+    overlay: "overlay1.json",
+    bg: "img/1200x450/riiconnect241.png",
+    sort: "",
+    avatar: "",
+    coin: "mario",
+    covertype: "cover3D",
+    coverregion: "EN",
+    useavatar: "false",
+    usemii: "false",
+    font: "default",
+    mii_data: "",
+};
+
 Sentry.init({ dsn: config.sentryURL });
 
 app.use(Sentry.Handlers.requestHandler());
@@ -406,7 +427,39 @@ function getFonts() {
 function editUser(id, key, value) {
     var p = path.resolve(dataFolder, "users", id + ".json");
     var jdata = JSON.parse(fs.readFileSync(p));
-    jdata[key] = value;
+
+    switch(key) {
+        case "bg":
+            var backgrounds = getBackgroundList();
+            if (!backgrounds.includes(value)) {
+                value = "riiconnect241.png";
+            }
+            jdata[key] = `img/1200x450/${value}`;
+            break;
+        case "overlay":
+            var overlays = getOverlayList();
+            if (!overlays.includes(value)) {
+                value = "overlay1.json";
+            }
+            jdata[key] = value;
+            break;
+        case "region":
+            break;
+        case "coin":
+            break;
+        case "name":
+            break;
+        case "friend_code":
+            var fcRegex = /([^\d\s])/gi;
+            console.log(value.replace(fcRegex, " "));
+            jdata[key] = value.replace(fcRegex, " ");
+            break;
+        default:
+            console.log(`Setting undefined key ('${key}') to ${value}`);
+            jdata[key] = value;
+            break;
+
+    }
     fs.writeFileSync(p, JSON.stringify(jdata, null, 4));
 }
 
@@ -435,22 +488,24 @@ function getUserData(id) {
 }
 
 async function createUser(user) {
-    if (!fs.existsSync(path.resolve(dataFolder, "users", user.id + ".json"))) {
-        var ujson = {
-            name: user.username,
-            id: user.id,
-            games: [],
-            lastplayed: [],
-            coins: 0,
-            friend_code: "0000 0000 0000 0000",
-            region: "rc24",
-            overlay: "overlay1.json",
-            bg: "img/1200x450/riiconnect241.png",
-            sort: "",
-            font: "default"
-        };
-    
-        fs.writeFileSync(path.resolve(dataFolder, "users", user.id + ".json"), JSON.stringify(ujson, null, 4));
+    var userFilePath = path.resolve(dataFolder, "users", user.id + ".json");
+    if (!fs.existsSync(userFilePath)) {
+        var ujson = defaultUserData;
+        ujson.name = user.username;
+        ujson.id = user.id;
+        fs.writeFileSync(userFilePath, JSON.stringify(ujson, null, 4));
+    } else {
+        var userFile = JSON.parse(fs.readFileSync(userFilePath));
+        var keys = Object.keys(defaultUserData);
+        console.log(keys);
+        for (var key of keys) {
+            console.log(key);
+            console.log(userFile[key]);
+            if (!userFile[key]) {
+                userFile[key] == defaultUserData[key];
+            }
+        }
+        fs.writeFileSync(userFilePath, JSON.stringify(userFile, null, 4));
     }
 
     var userKey = await getUserKey(user.id);

@@ -51,7 +51,7 @@ var sel7 = document.getElementById('mii-select');
 var miiUploadButton = document.getElementById('mii-upload');
 
 sel.onchange = function () {
-    document.getElementById("background-img").src = "/" + this.value;
+    document.getElementById("background-img").src = "/img/1200x450/" + this.value;
 }
 
 sel2.onchange = function () {

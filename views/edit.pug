@@ -23,12 +23,14 @@ block content
                                         .container
                                             .row.justify-content-center
                                                 .col-12
-                                                   select(name="background" id="background").big-space-bottom
+                                                    //- each bg in backgrounds 
+                                                    //-     p= bg
+                                                    select(name="background" id="background").big-space-bottom
                                                         each bg in backgrounds
-                                                            if jdata.bg == `img/1200x450/${bg}`
-                                                                option(value=`img/1200x450/${bg}` selected=true)= bg
+                                                            if jdata.bg.replace("img/1200x450/", "") == bg
+                                                                option(value=bg selected=true)= bg
                                                             else
-                                                                option(value=`img/1200x450/${bg}` selected=false)= bg
+                                                                option(value=bg selected=false)= bg
                                             .row.justify-content-center
                                                 .col-12
                                                     div.text-center.space-top
