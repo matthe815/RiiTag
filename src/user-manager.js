@@ -49,6 +49,22 @@ module.exports.getAttribute = (id, key) => {
 }
 
 /**
+ * Same as getAttribute except it retrieves multiple values.
+ * @param {string} id
+ * @param {string[]} keys An array of attribute keys
+ * @returns {object}
+ */
+module.exports.getAttribute = (id, keys) => {
+  const values = {}
+
+  keys.forEach(key => {
+    values[key] = this.getAttribute(id, key)
+  })
+
+  return values
+}
+
+/**
  * Get a user's key through their Discord ID.
  * @param {string} id
  */

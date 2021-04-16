@@ -6,8 +6,8 @@ const userManager = require('./src/user-manager')
 
 const passport = require('passport')
 const session = require('express-session')
-const bodyParser = require('body-parser')
 const DiscordStrategy = require('passport-discord').Strategy
+const renderMiiFromHex = require('./src/rendermiifromhex')
 const xml = require('xml')
 const crypto = require('crypto')
 
@@ -59,8 +59,7 @@ app.use(session({
 
 app.use(passport.initialize())
 app.use(passport.session())
-app.use(bodyParser.urlencoded({ extended: false }))
-app.use(bodyParser.json())
+app.use(express.json())
 app.use(express.static('public/'))
 app.use(express.static('data/'))
 app.set('view engine', 'pug')
@@ -137,7 +136,7 @@ app.route('/edit')
     })
 
     if (!guestList.includes(req.body.miidata)) {
-      await renderMiiFromHex(req.body.miidata, req.user.id, dataFolder).catch(() => {
+      await renderMiiFromHex(req.body.miidata, req.user.id, dataManager.dataFolder).catch(() => {
         console.log('Failed to render mii')
       })
     }
@@ -154,13 +153,10 @@ app.route('/edit')
 app.get('/create', checkAuth, async (req, res) => {
   if (!fs.existsSync(dataManager.build('tag'))) { fs.mkdirSync(dataManager.build('tag')) }
 
-  userManager.create(req.user, generateRandomKey())
+  await userManager.create(req.user, generateRandomKey())
   userManager.edit(req.user.id, { avatar: req.user.avatar })
 
-  const banner = await getTag(req.user.id).catch(() => {
-    res.status(404).render('notfound.pug')
-  })
-
+  await getTag(req.user.id).catch(() => { res.status(404).render('notfound.pug') })
   res.redirect(req.user.admin ? '/admin' : `/${req.user.id}`)
 })
 
@@ -174,15 +170,13 @@ function getTag (id) {
 app.get('^/:id([0-9]+)/tag.png', async (req, res) => {
   try {
     if (!fs.existsSync(dataManager.build('tag'))) { fs.mkdirSync(dataManager.build('tag')) }
-
     if (!fs.existsSync(dataManager.build('users', `${req.params.id}.json`)) || !fs.existsSync(dataManager.build('tag', `${req.params.id}.png`))) { res.status(404).render('notfound.pug') }
 
-    const file = dataManager.build('tag', `${req.params.id}.png`)
-    const s = fs.createReadStream(file)
+    const stream = fs.createReadStream(dataManager.build('tag', `${req.params.id}.png`))
 
-    s.on('open', () => {
+    stream.on('open', () => {
       res.set('Content-Type', 'image/png')
-      s.pipe(res)
+      stream.pipe(res)
     })
   } catch (e) {
     res.status(404).render('notfound.pug')
@@ -202,20 +196,16 @@ async function incrementUserCoins (res, key, gameID, wiiu = false, ids = null) {
     if (Math.floor(Date.now() / 1000) - userManager.getAttribute(userID, 'lastplayed')[1] < 60) { return res.status(429).send() } // cooldown
   }
 
-  const coins = userManager.getAttribute(userID, 'coins')
-  const games = userManager.getAttribute(userID, 'games')
-  const newGames = updateGameArray(games, !wiiu ? `wii-${gameID}` : `wiiu-${ids[gameTID]}`)
+  const attributes = userManager.getAttributes(userID, ['coins', 'games'])
+  const newGames = updateGameArray(attributes.games, !wiiu ? `wii-${gameID}` : `wiiu-${ids[gameID]}`)
 
   userManager.edit(userID, {
-    coins: coins + 1,
+    coins: attributes.coins + 1,
     games: newGames,
     lastPlayed: [`wii-${gameID}`, Math.floor(Date.now() / 1000)]
   })
 
-  await getTag(userID).catch(() => {
-    return res.status(404).render('notfound.pug')
-  })
-
+  await getTag(userID).catch(() => { return res.status(404).render('notfound.pug') })
   res.status(200).send()
 }
 
@@ -233,13 +223,13 @@ app.get('/wii', async (req, res) => {
 
     const ids = JSON.parse(fs.readFileSync(dataManager.build('ids', 'wiiu.json'))) // 16 digit TID -> 4 or 6 digit game ID
 
-    if (key == '' || gameTID == '') { return res.status(400) }
+    if (key === '' || gameTID === '') { return res.status(400) }
 
     incrementUserCoins(res, key, '', true, ids)
   })
 
 app.get('/Wiinnertag.xml', checkAuth, async (req, res) => {
-  const userKey = await getUserKey(req.user.id)
+  const userKey = await userManager.get(req.user.id)
   const tag = {
     Tag: {
       _attr: {
@@ -269,7 +259,7 @@ app.get('^/:id([0-9]+)', (req, res, next) => {
 
 // Receive user JSON
 app.get('^/:id([0-9]+)/json', (req, res) => {
-  const userData = getUserData(req.params.id)
+  const userData = userManager.get(req.params.id)
   res.type('application/json')
 
   if (!userData) { return res.status(404).send(JSON.stringify({ error: 'That user ID does not exist.' })) }
@@ -277,7 +267,7 @@ app.get('^/:id([0-9]+)/json', (req, res) => {
   let lastPlayed = {}
 
   if (userData.lastplayed.length !== 0) {
-    const banner = new Banner(JSON.stringify(userData), doMake = false)
+    const banner = new Banner(JSON.stringify(userData), false)
     const game = userData.lastplayed[0]
     const time = userData.lastplayed[1]
     const gameid = game.split('-')[1]
@@ -318,9 +308,6 @@ app.get('^/admin/refresh/:id([0-9]+)', checkAdmin, async (req, res) => {
 })
 
 app.listen(port, async () => {
-  // await db.create("users", ["id INTEGER PRIMARY KEY", "snowflake TEXT", "key TEXT"]);
-  // await db.create("games", ["id INTEGER PRIMARY KEY", "console INTEGER", "gameID TEXT", "count INTEGER"]);
-  // await db.create("coins", ["id INTEGER PRIMARY KEY", "snowflake TEXT", "count INTEGER"]);
   console.log('RiiTag Server listening on port ' + port)
 })
 
